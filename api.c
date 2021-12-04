@@ -39,9 +39,16 @@
 #include  "globals.h"
 #include  "http.h"
 
+#define JANUS_VIDEOROOM 1
+#if JANUS_VIDEOROOM
+#   define JANUS_PLUGIN_NAME "videoroom"
+#else
+#   define JANUS_PLUGIN_NAME "audiobridge"
+#endif
+
 #define TRANSACTION_ID_LENGTH 16
 #define JANUS_STRING  "janus"
-#define JANUS_PLUGIN "janus.plugin.audiobridge"
+#define JANUS_PLUGIN "janus.plugin." JANUS_PLUGIN_NAME
 #define	MAX_POLL_EVENTS 10
 #define HTTP_GET_TIMEOUT 0
 #define HTTP_POST_TIMEOUT 3000
@@ -543,9 +550,9 @@ janus_id_t apiCreateRoom(const char *pUrl, const char *pSecret, const janus_id_t
     goto done;
 	}
 
-  pJsonRspResult = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonBody, "audiobridge");
+  pJsonRspResult = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonBody, JANUS_PLUGIN_NAME);
   if (!cJSON_IsString(pJsonRspResult)) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "No response (plugindata.data.audiobridge)\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "No response (plugindata.data." JANUS_PLUGIN_NAME ")\n");
     goto done;
   }
 
@@ -572,7 +579,7 @@ janus_id_t apiCreateRoom(const char *pUrl, const char *pSecret, const janus_id_t
 	  }
 	  result = roomId;
 	} else {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Invalid response (plugindata.data.audiobridge)\n");
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Invalid response (plugindata.data." JANUS_PLUGIN_NAME ")\n");
 		goto done;
 	}
 
@@ -618,6 +625,14 @@ switch_status_t apiJoin(const char *pUrl, const char *pSecret,
 		result = SWITCH_STATUS_FALSE;
     goto done;
   }
+
+#if JANUS_VIDEOROOM
+  if (cJSON_AddStringToObject(request.pJsonBody, "ptype", "publisher") == NULL) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Cannot create string (body.ptype)\n");
+		result = SWITCH_STATUS_FALSE;
+    goto done;
+  }
+#endif
 
   if (cJSON_AddNumberToObject(request.pJsonBody, "room", roomId) == NULL) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Cannot create string (body.room)\n");
@@ -1025,9 +1040,9 @@ switch_status_t apiPoll(const char *pUrl, const char *pSecret, const janus_id_t 
 			 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Couldn't add candidate\n");
 			}
 		} else if (!strcmp(pResponse->pType, "event")) {
-			  pJsonRspType = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonBody, "audiobridge");
+			  pJsonRspType = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonBody, JANUS_PLUGIN_NAME);
 			  if (!cJSON_IsString(pJsonRspType)) {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "No response (plugindata.data.audiobridge)\n");
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "No response (plugindata.data." JANUS_PLUGIN_NAME ")\n");
 					goto endloop;
 			  }
 
@@ -1062,13 +1077,17 @@ switch_status_t apiPoll(const char *pUrl, const char *pSecret, const janus_id_t 
 						DEBUG(SWITCH_CHANNEL_LOG, "Someone else has joined\n");
 					}
 				} else if (!strcmp("event", pJsonRspType->valuestring)) {
+
+#if JANUS_VIDEOROOM
+					pJsonRspType = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonBody, "configured");
+#else
 					pJsonRspType = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonBody, "result");
+#endif
 					if (pJsonRspType) {
 						if (!cJSON_IsString(pJsonRspType) || strcmp("ok", pJsonRspType->valuestring)) {
 					    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Invalid response (plugindata.data.result)\n");
 							goto endloop;
 					  }
-
 						pJsonRspJsepType = cJSON_GetObjectItemCaseSensitive(pResponse->pJsonJsep, "type");
 						if (!cJSON_IsString(pJsonRspJsepType) || strcmp("answer", pJsonRspJsepType->valuestring)) {
 							switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Invalid response (jsep.type)\n");
@@ -1091,13 +1110,13 @@ switch_status_t apiPoll(const char *pUrl, const char *pSecret, const janus_id_t 
 						}
 						DEBUG(SWITCH_CHANNEL_LOG, "leaving=%" SWITCH_UINT64_T_FMT "\n", (janus_id_t) pJsonRspType->valuedouble);
 					} else {
-						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Unknown audiobridge event\n");
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Unknown " JANUS_PLUGIN_NAME " event\n");
 						goto endloop;
 					}
 				} else if (!strcmp("left", pJsonRspType->valuestring)) {
 					DEBUG(SWITCH_CHANNEL_LOG, "Caller has left the room\n");
 				} else {
-					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Unknown result - audiobridge=%s\n", pJsonRspType->valuestring);
+					switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Unknown result - " JANUS_PLUGIN_NAME "=%s\n", pJsonRspType->valuestring);
 				}
 		 } else {
 			 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Unknown event - janus=%s\n", pResponse->pType);
